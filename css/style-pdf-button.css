@@ -1,0 +1,26 @@
+.pdf-icon-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    margin: 20px auto;
+}
+
+.pdf-icon-container p {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333; /* Color del texto */
+    margin-top: 10px;
+}
+
+.pdf-icon-container a {
+    color: #d9534f; /* Rojo para el ícono */
+    text-decoration: none;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.pdf-icon-container a:hover {
+    color: #c9302c; /* Rojo más oscuro al pasar el mouse */
+    transform: scale(1.1); /* Efecto de agrandamiento */
+}
