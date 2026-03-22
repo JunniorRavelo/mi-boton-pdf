@@ -114,9 +114,16 @@
                                     label: __( 'Usar configuración del botón', 'mi-boton-pdf' ),
                                     value: 'inherit',
                                 },
-                                { label: __( 'Automático (mismo sitio)', 'mi-boton-pdf' ), value: 'auto' },
+                                {
+                                    label: __( 'Visor en la misma página (móviles)', 'mi-boton-pdf' ),
+                                    value: 'overlay',
+                                },
+                                { label: __( 'Enlace sin forzar descarga', 'mi-boton-pdf' ), value: 'no' },
                                 { label: __( 'Forzar descarga', 'mi-boton-pdf' ), value: 'yes' },
-                                { label: __( 'En el navegador (sin forzar descarga)', 'mi-boton-pdf' ), value: 'no' },
+                                {
+                                    label: __( 'Automático (sin forzar descarga)', 'mi-boton-pdf' ),
+                                    value: 'auto',
+                                },
                             ],
                             onChange: function ( v ) {
                                 setAttributes( { download: v } );

@@ -3,7 +3,7 @@
  * Plugin Name: Button PDF
  * Plugin URI:  https://www.linkedin.com/in/jsravelo/
  * Description: Crea botones PDF con enlaces personalizados y genera shortcodes para insertarlos en entradas o páginas.
- * Version:     2.2.0
+ * Version:     2.2.1
  * Author:      J. Santiago Ravelo
  * Author URI:  https://www.linkedin.com/in/jsravelo/
  * Text Domain: mi-boton-pdf
@@ -14,7 +14,7 @@ if ( ! defined('ABSPATH') ) {
     exit;
 }
 
-define('MBPDF_VERSION', '2.2.0');
+define('MBPDF_VERSION', '2.2.1');
 
 /** Opción: slug de plantilla predeterminada para botones nuevos. */
 define('MBPDF_OPTION_DEFAULT_STYLE', 'mbpdf_default_button_style');
@@ -205,6 +205,40 @@ function mbpdf_registrar_cpt() {
 add_action('init', 'mbpdf_registrar_cpt');
 
 /**
+ * Registro del script del visor PDF en capa (modal + iframe).
+ */
+function mbpdf_register_viewer_script() {
+    wp_register_script(
+        'mbpdf-viewer',
+        plugins_url('js/frontend-viewer.js', __FILE__),
+        array(),
+        MBPDF_VERSION,
+        true
+    );
+}
+add_action('wp_enqueue_scripts', 'mbpdf_register_viewer_script', 0);
+
+/**
+ * Encola visor en capa una vez por petición si hace falta.
+ */
+function mbpdf_enqueue_overlay_viewer_assets() {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    wp_localize_script(
+        'mbpdf-viewer',
+        'mbpdfViewer',
+        array(
+            'closeLabel'      => __('Cerrar', 'mi-boton-pdf'),
+            'openNewTabLabel' => __('Abrir en pestaña nueva', 'mi-boton-pdf'),
+        )
+    );
+    wp_enqueue_script('mbpdf-viewer');
+}
+
+/**
  * Scripts de administración: metabox (biblioteca de medios).
  */
 function mbpdf_admin_enqueue($hook) {
@@ -291,19 +325,22 @@ function mbpdf_link_metabox_cb($post) {
     </p>
     <p>
         <select id="mbpdf_download_mode_field" name="mbpdf_download_mode_field">
+            <option value="overlay" <?php selected($download_mode, 'overlay'); ?>>
+                <?php esc_html_e('Visor en la misma página (recomendado en móviles)', 'mi-boton-pdf'); ?>
+            </option>
             <option value="no" <?php selected($download_mode, 'no'); ?>>
-                <?php esc_html_e('En el navegador (visualizador)', 'mi-boton-pdf'); ?>
+                <?php esc_html_e('Enlace: abrir en pestaña (sin forzar descarga)', 'mi-boton-pdf'); ?>
             </option>
             <option value="yes" <?php selected($download_mode, 'yes'); ?>>
                 <?php esc_html_e('Descargar el archivo', 'mi-boton-pdf'); ?>
             </option>
             <option value="auto" <?php selected($download_mode, 'auto'); ?>>
-                <?php esc_html_e('Automático: descargar solo si el PDF está en este sitio', 'mi-boton-pdf'); ?>
+                <?php esc_html_e('Automático (compatibilidad): igual que enlace sin forzar descarga', 'mi-boton-pdf'); ?>
             </option>
         </select>
     </p>
     <p class="description">
-        <?php esc_html_e('En móviles y escritorio, sin “descargar” el enlace suele abrirse el visor del sistema o del navegador. Forzar descarga funciona mejor con PDFs alojados en este mismo sitio; en enlaces externos muchos navegadores pueden ignorarlo.', 'mi-boton-pdf'); ?>
+        <?php esc_html_e('En Android, el atributo HTML «descargar» suele guardar el archivo en lugar de mostrarlo. Este plugin solo fuerza la descarga si eliges «Descargar el archivo». «Visor en la misma página» abre el PDF en un cuadro sobre la web (iframe); si el servidor del PDF no lo permite incrustado, usa «Abrir en pestaña nueva» dentro del visor o cambia a enlace directo.', 'mi-boton-pdf'); ?>
     </p>
     <hr style="margin:16px 0;" />
     <p>
@@ -407,7 +444,7 @@ function mbpdf_guardar_metabox($post_id) {
 
     if (isset($_POST['mbpdf_download_mode_field'])) {
         $mode = sanitize_text_field(wp_unslash($_POST['mbpdf_download_mode_field']));
-        if (in_array($mode, array('auto', 'yes', 'no'), true)) {
+        if (in_array($mode, array('auto', 'yes', 'no', 'overlay'), true)) {
             update_post_meta($post_id, '_mbpdf_download_mode', $mode);
         }
     }
@@ -483,7 +520,7 @@ function mbpdf_is_same_site_pdf_url($url) {
  * Modo de apertura/descarga guardado en el botón (metabox).
  *
  * @param int $post_id ID del CPT mbpdf_button.
- * @return string 'auto'|'yes'|'no'
+ * @return string 'auto'|'yes'|'no'|'overlay'
  */
 function mbpdf_get_stored_download_mode($post_id) {
     $post_id = (int) $post_id;
@@ -491,21 +528,21 @@ function mbpdf_get_stored_download_mode($post_id) {
         return 'auto';
     }
     $saved = get_post_meta($post_id, '_mbpdf_download_mode', true);
-    return in_array($saved, array('auto', 'yes', 'no'), true) ? $saved : 'auto';
+    return in_array($saved, array('auto', 'yes', 'no', 'overlay'), true) ? $saved : 'auto';
 }
 
 /**
  * Convierte inherit (o vacío) en el modo efectivo del botón o valida el valor explícito.
  *
  * @param int    $post_id  ID del botón.
- * @param string $download Valor del shortcode/bloque: inherit|auto|yes|no.
- * @return string 'auto'|'yes'|'no'
+ * @param string $download Valor del shortcode/bloque: inherit|auto|yes|no|overlay.
+ * @return string 'auto'|'yes'|'no'|'overlay'
  */
 function mbpdf_resolve_download_mode($post_id, $download) {
     if ($download === 'inherit' || $download === '') {
         return mbpdf_get_stored_download_mode($post_id);
     }
-    if (in_array($download, array('auto', 'yes', 'no'), true)) {
+    if (in_array($download, array('auto', 'yes', 'no', 'overlay'), true)) {
         return $download;
     }
     return 'auto';
@@ -581,8 +618,8 @@ function mbpdf_get_button_html($post_id, $args = array()) {
     $rel_attr = $rel !== '' ? ' rel="' . esc_attr($rel) . '"' : '';
 
     $download_attr = '';
-    $add_download = ($download_mode === 'yes') || ($download_mode === 'auto' && mbpdf_is_same_site_pdf_url($pdf_link));
-    if ($add_download) {
+    // Solo el modo explícito «yes» usa el atributo download. «auto» ya no fuerza descarga en PDFs del mismo sitio (evita descargas en Android).
+    if ($download_mode === 'yes') {
         $path = wp_parse_url($pdf_link, PHP_URL_PATH);
         $fname = ($path && $path !== '/') ? basename($path) : '';
         if ($fname === '' || $fname === '/') {
@@ -595,9 +632,17 @@ function mbpdf_get_button_html($post_id, $args = array()) {
         $download_attr = ' download="' . esc_attr($fname) . '"';
     }
 
+    $link_classes = 'pdf-icon-container__link';
+    $extra_link_attrs = '';
+    if ($download_mode === 'overlay') {
+        mbpdf_enqueue_overlay_viewer_assets();
+        $link_classes .= ' mbpdf-viewer-trigger';
+        $extra_link_attrs = ' data-mbpdf-src="' . esc_url($pdf_link) . '"';
+    }
+
     $html = sprintf(
         '<div class="%1$s">
-      <a class="pdf-icon-container__link" href="%2$s" target="%3$s"%4$s%5$s title="%6$s">
+      <a class="%9$s" href="%2$s" target="%3$s"%4$s%5$s%10$s title="%6$s">
         <svg xmlns="http://www.w3.org/2000/svg" width="%7$d" height="%7$d" fill="currentColor" class="bi bi-filetype-pdf" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2h-1v-1h1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM1.6 11.85H0v3.999h.791v-1.342h.803q.43 0 .732-.173.305-.175.463-.474a1.4 1.4 0 0 0 .161-.677q0-.375-.158-.677a1.2 1.2 0 0 0-.46-.477q-.3-.18-.732-.179m.545 1.333a.8.8 0 0 1-.085.38.57.57 0 0 1-.238.241.8.8 0 0 1-.375.082H.788V12.48h.66q.327 0 .512.181.185.183.185.522m1.217-1.333v3.999h1.46q.602 0 .998-.237a1.45 1.45 0 0 0 .595-.689q.196-.45.196-1.084 0-.63-.196-1.075a1.43 1.43 0 0 0-.589-.68q-.396-.234-1.005-.234zm.791.645h.563q.371 0 .609.152a.9.9 0 0 1 .354.454q.118.302.118.753a2.3 2.3 0 0 1-.068.592 1.1 1.1 0 0 1-.196.422.8.8 0 0 1-.334.252 1.3 1.3 0 0 1-.483.082h-.563zm3.743 1.763v1.591h-.79V11.85h2.548v.653H7.896v1.117h1.606v.638z"/>
         </svg>
@@ -611,7 +656,9 @@ function mbpdf_get_button_html($post_id, $args = array()) {
         $download_attr,
         esc_attr($pdf_title),
         $size,
-        esc_html($pdf_title)
+        esc_html($pdf_title),
+        esc_attr($link_classes),
+        $extra_link_attrs
     );
 
     return $html;
