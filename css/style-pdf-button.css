@@ -7,20 +7,44 @@
     margin: 20px auto;
 }
 
-.pdf-icon-container p {
+.pdf-icon-container__label {
     font-size: 18px;
     font-weight: bold;
-    color: #333; /* Color del texto */
+    color: #333;
     margin-top: 10px;
+    margin-bottom: 0;
 }
 
-.pdf-icon-container a {
-    color: #d9534f; /* Rojo para el ícono */
+.pdf-icon-container__link {
+    color: #d9534f;
     text-decoration: none;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 4px;
     transition: transform 0.2s ease, color 0.2s ease;
 }
 
-.pdf-icon-container a:hover {
-    color: #c9302c; /* Rojo más oscuro al pasar el mouse */
-    transform: scale(1.1); /* Efecto de agrandamiento */
+.pdf-icon-container__link:hover {
+    color: #c9302c;
+    transform: scale(1.1);
+}
+
+.pdf-icon-container__link:focus {
+    outline: none;
+}
+
+.pdf-icon-container__link:focus-visible {
+    outline: 2px solid #c9302c;
+    outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdf-icon-container__link {
+        transition: none;
+    }
+
+    .pdf-icon-container__link:hover {
+        transform: none;
+    }
 }
