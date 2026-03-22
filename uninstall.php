@@ -9,6 +9,8 @@ if ( ! defined('WP_UNINSTALL_PLUGIN') ) {
     exit;
 }
 
+delete_option('mbpdf_default_button_style');
+
 $post_ids = get_posts(
     array(
         'post_type'      => 'mbpdf_button',

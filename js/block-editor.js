@@ -16,6 +16,19 @@
     var __ = i18n.__;
 
     var buttons = mbpdfBlock && mbpdfBlock.buttons ? mbpdfBlock.buttons : [];
+    var styleTemplates =
+        mbpdfBlock && mbpdfBlock.styleTemplates ? mbpdfBlock.styleTemplates : [];
+
+    var styleOptions = [
+        {
+            label: __( 'Usar plantilla del botón (Botones PDF)', 'mi-boton-pdf' ),
+            value: 'inherit',
+        },
+    ].concat(
+        styleTemplates.map( function ( t ) {
+            return { label: t.label, value: t.slug };
+        } )
+    );
 
     var options = [
         { label: __( 'Selecciona un botón PDF…', 'mi-boton-pdf' ), value: '0' },
@@ -38,6 +51,7 @@
             download: { type: 'string', default: 'inherit' },
             size: { type: 'integer', default: 48 },
             className: { type: 'string', default: '' },
+            buttonStyle: { type: 'string', default: 'inherit' },
         },
         supports: {
             html: false,
@@ -117,6 +131,18 @@
                             min: 16,
                             max: 128,
                             step: 4,
+                        } ),
+                        el( SelectControl, {
+                            label: __( 'Plantilla de estilo', 'mi-boton-pdf' ),
+                            help: __(
+                                '«Usar plantilla del botón» respeta lo definido al crear o editar el botón en Botones PDF.',
+                                'mi-boton-pdf'
+                            ),
+                            value: attributes.buttonStyle || 'inherit',
+                            options: styleOptions,
+                            onChange: function ( v ) {
+                                setAttributes( { buttonStyle: v } );
+                            },
                         } )
                     )
                 ),

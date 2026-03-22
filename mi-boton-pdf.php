@@ -3,7 +3,7 @@
  * Plugin Name: Button PDF
  * Plugin URI:  https://www.linkedin.com/in/jsravelo/
  * Description: Crea botones PDF con enlaces personalizados y genera shortcodes para insertarlos en entradas o páginas.
- * Version:     2.1.0
+ * Version:     2.2.0
  * Author:      J. Santiago Ravelo
  * Author URI:  https://www.linkedin.com/in/jsravelo/
  * Text Domain: mi-boton-pdf
@@ -14,7 +14,13 @@ if ( ! defined('ABSPATH') ) {
     exit;
 }
 
-define('MBPDF_VERSION', '2.1.0');
+define('MBPDF_VERSION', '2.2.0');
+
+/** Opción: slug de plantilla predeterminada para botones nuevos. */
+define('MBPDF_OPTION_DEFAULT_STYLE', 'mbpdf_default_button_style');
+
+/** Meta del botón: plantilla de estilo (slug). */
+define('MBPDF_META_BUTTON_STYLE', '_mbpdf_button_style');
 
 /**
  * Cargar traducciones (carpeta /languages del plugin).
@@ -27,6 +33,144 @@ function mbpdf_load_textdomain() {
     );
 }
 add_action('plugins_loaded', 'mbpdf_load_textdomain');
+
+/**
+ * Plantillas de estilo del botón (slug => datos para UI y CSS).
+ *
+ * @return array<string, array{label:string, swatch:string}>
+ */
+function mbpdf_get_style_templates() {
+    return array(
+        'classic' => array(
+            'label'  => __('Clásico (rojo)', 'mi-boton-pdf'),
+            'swatch' => '#d9534f',
+        ),
+        'ocean'   => array(
+            'label'  => __('Océano (azul)', 'mi-boton-pdf'),
+            'swatch' => '#0d6efd',
+        ),
+        'forest'  => array(
+            'label'  => __('Bosque (verde)', 'mi-boton-pdf'),
+            'swatch' => '#198754',
+        ),
+        'slate'   => array(
+            'label'  => __('Pizarra (gris)', 'mi-boton-pdf'),
+            'swatch' => '#495057',
+        ),
+        'sunset'  => array(
+            'label'  => __('Atardecer (naranja)', 'mi-boton-pdf'),
+            'swatch' => '#fd7e14',
+        ),
+        'violet'  => array(
+            'label'  => __('Violeta', 'mi-boton-pdf'),
+            'swatch' => '#6f42c1',
+        ),
+        'dark'    => array(
+            'label'  => __('Contraste oscuro', 'mi-boton-pdf'),
+            'swatch' => '#212529',
+        ),
+        'minimal' => array(
+            'label'  => __('Minimal (contorno)', 'mi-boton-pdf'),
+            'swatch' => '#6c757d',
+        ),
+    );
+}
+
+/**
+ * Slugs de plantilla válidos.
+ *
+ * @return string[]
+ */
+function mbpdf_get_valid_style_slugs() {
+    return array_keys(mbpdf_get_style_templates());
+}
+
+/**
+ * Normaliza un slug de plantilla.
+ *
+ * @param string $slug Valor recibido.
+ * @return string Slug válido.
+ */
+function mbpdf_sanitize_style_slug($slug) {
+    $slug = sanitize_key((string) $slug);
+    return in_array($slug, mbpdf_get_valid_style_slugs(), true) ? $slug : 'classic';
+}
+
+/**
+ * Plantilla guardada en el botón o vacío si nunca se definió.
+ *
+ * @param int $post_id ID del CPT.
+ * @return string Slug o cadena vacía.
+ */
+function mbpdf_get_stored_button_style_raw($post_id) {
+    $post_id = (int) $post_id;
+    if ( ! $post_id ) {
+        return '';
+    }
+    $saved = get_post_meta($post_id, MBPDF_META_BUTTON_STYLE, true);
+    if ($saved === '' || $saved === false) {
+        return '';
+    }
+    $slug = sanitize_key((string) $saved);
+    return in_array($slug, mbpdf_get_valid_style_slugs(), true) ? $slug : '';
+}
+
+/**
+ * Plantilla efectiva al mostrar el botón (shortcode, bloque con inherit).
+ * Sin meta guardada se usa «classic» para no cambiar botones creados antes de 2.2.
+ *
+ * @param int $post_id ID del CPT.
+ * @return string Slug válido.
+ */
+function mbpdf_get_effective_button_style($post_id) {
+    $raw = mbpdf_get_stored_button_style_raw($post_id);
+    if ($raw !== '') {
+        return $raw;
+    }
+    return 'classic';
+}
+
+/**
+ * Plantilla preseleccionada en el metabox (nuevo botón = predeterminado del sitio; sin meta en botón ya existente = clásico).
+ *
+ * @param \WP_Post $post Post del CPT.
+ * @return string Slug válido.
+ */
+function mbpdf_metabox_selected_template($post) {
+    $stored = mbpdf_get_stored_button_style_raw($post->ID);
+    if ($stored !== '') {
+        return $stored;
+    }
+    $is_new = ( (int) $post->ID === 0 || $post->post_status === 'auto-draft' );
+    return $is_new ? mbpdf_get_default_style_option() : 'classic';
+}
+
+/**
+ * Opción global: plantilla para botones nuevos y para botones sin meta.
+ *
+ * @return string Slug válido.
+ */
+function mbpdf_get_default_style_option() {
+    $opt = get_option(MBPDF_OPTION_DEFAULT_STYLE, 'classic');
+    return mbpdf_sanitize_style_slug((string) $opt);
+}
+
+/**
+ * Lista de plantillas para el editor de bloques (JSON-friendly).
+ *
+ * @return array<int, array{slug:string,label:string}>
+ */
+function mbpdf_get_style_templates_for_block() {
+    $out   = array();
+    $tpls  = mbpdf_get_style_templates();
+    foreach ($tpls as $slug => $data) {
+        $out[] = array(
+            'slug'  => $slug,
+            'label' => $data['label'],
+        );
+    }
+    return $out;
+}
 
 /**
  * 1. Registrar un Custom Post Type para los botones PDF
@@ -70,6 +214,12 @@ function mbpdf_admin_enqueue($hook) {
     }
 
     wp_enqueue_media();
+    wp_enqueue_style(
+        'mbpdf-frontend-preview',
+        plugin_dir_url(__FILE__) . 'css/style-pdf-button.css',
+        array(),
+        MBPDF_VERSION
+    );
     wp_enqueue_script(
         'mbpdf-admin-metabox',
         plugins_url('js/admin-metabox.js', __FILE__),
@@ -111,6 +261,9 @@ function mbpdf_link_metabox_cb($post) {
 
     $pdf_link      = get_post_meta($post->ID, '_mbpdf_link', true);
     $download_mode = mbpdf_get_stored_download_mode($post->ID);
+    $templates     = mbpdf_get_style_templates();
+    $selected_tpl = mbpdf_metabox_selected_template($post);
+    $global_def   = mbpdf_get_default_style_option();
     ?>
     <p>
         <label for="mbpdf_link_field">
@@ -152,6 +305,67 @@ function mbpdf_link_metabox_cb($post) {
     <p class="description">
         <?php esc_html_e('En móviles y escritorio, sin “descargar” el enlace suele abrirse el visor del sistema o del navegador. Forzar descarga funciona mejor con PDFs alojados en este mismo sitio; en enlaces externos muchos navegadores pueden ignorarlo.', 'mi-boton-pdf'); ?>
     </p>
+    <hr style="margin:16px 0;" />
+    <p>
+        <strong><?php esc_html_e('Plantilla de estilo del botón', 'mi-boton-pdf'); ?></strong>
+    </p>
+    <p class="description">
+        <?php
+        printf(
+            /* translators: %s: nombre de la plantilla predeterminada del sitio */
+            esc_html__('Elige cómo se verá el botón en el sitio. Plantilla predeterminada para botones nuevos: %s.', 'mi-boton-pdf'),
+            esc_html($templates[ $global_def ]['label'])
+        );
+        ?>
+    </p>
+    <fieldset class="mbpdf-style-fieldset" style="margin:0;padding:0;border:0;">
+        <legend class="screen-reader-text"><?php esc_html_e('Plantilla de estilo del botón', 'mi-boton-pdf'); ?></legend>
+        <?php foreach ($templates as $slug => $info) : ?>
+            <p class="mbpdf-style-choice" style="margin:6px 0;">
+                <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input
+                        type="radio"
+                        name="mbpdf_button_style_field"
+                        value="<?php echo esc_attr($slug); ?>"
+                        <?php checked($selected_tpl, $slug); ?>
+                    />
+                    <span
+                        class="mbpdf-style-swatch"
+                        style="<?php echo esc_attr('display:inline-block;width:14px;height:14px;border-radius:3px;background:' . $info['swatch'] . ';flex-shrink:0;'); ?>"
+                        aria-hidden="true"
+                    ></span>
+                    <span><?php echo esc_html($info['label']); ?></span>
+                </label>
+            </p>
+        <?php endforeach; ?>
+    </fieldset>
+    <p style="margin-top:12px;">
+        <label>
+            <input type="checkbox" name="mbpdf_set_default_style_for_new" value="1" />
+            <?php esc_html_e('Guardar también la plantilla elegida arriba como predeterminada para los próximos botones nuevos', 'mi-boton-pdf'); ?>
+        </label>
+    </p>
+    <p class="description mbpdf-style-preview-note">
+        <?php esc_html_e('Vista aproximada (el tamaño en el sitio depende del shortcode o del bloque):', 'mi-boton-pdf'); ?>
+    </p>
+    <div class="mbpdf-admin-style-previews" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin-top:8px;">
+        <?php foreach ($templates as $slug => $info) : ?>
+            <div class="mbpdf-admin-mini-wrap" style="flex:0 0 auto;width:120px;text-align:center;">
+                <div
+                    class="pdf-icon-container mbpdf-tpl-<?php echo esc_attr($slug); ?>"
+                    style="margin:0 auto;transform:scale(0.55);transform-origin:center top;"
+                >
+                    <a class="pdf-icon-container__link" href="#" onclick="return false;" tabindex="-1" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2h-1v-1h1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM1.6 11.85H0v3.999h.791v-1.342h.803q.43 0 .732-.173.305-.175.463-.474a1.4 1.4 0 0 0 .161-.677q0-.375-.158-.677a1.2 1.2 0 0 0-.46-.477q-.3-.18-.732-.179m.545 1.333a.8.8 0 0 1-.085.38.57.57 0 0 1-.238.241.8.8 0 0 1-.375.082H.788V12.48h.66q.327 0 .512.181.185.183.185.522m1.217-1.333v3.999h1.46q.602 0 .998-.237a1.45 1.45 0 0 0 .595-.689q.196-.45.196-1.084 0-.63-.196-1.075a1.43 1.43 0 0 0-.589-.68q-.396-.234-1.005-.234zm.791.645h.563q.371 0 .609.152a.9.9 0 0 1 .354.454q.118.302.118.753a2.3 2.3 0 0 1-.068.592 1.1 1.1 0 0 1-.196.422.8.8 0 0 1-.334.252 1.3 1.3 0 0 1-.483.082h-.563zm3.743 1.763v1.591h-.79V11.85h2.548v.653H7.896v1.117h1.606v.638z"/>
+                        </svg>
+                        <p class="pdf-icon-container__label" style="font-size:11px;margin-top:4px;">PDF</p>
+                    </a>
+                </div>
+                <span class="screen-reader-text"><?php echo esc_html($info['label']); ?></span>
+            </div>
+        <?php endforeach; ?>
+    </div>
     <?php if ($post->ID && $post->post_status !== 'auto-draft') : ?>
         <p class="description">
             <?php esc_html_e('Shortcode para insertar este botón:', 'mi-boton-pdf'); ?>
@@ -196,6 +410,18 @@ function mbpdf_guardar_metabox($post_id) {
         if (in_array($mode, array('auto', 'yes', 'no'), true)) {
             update_post_meta($post_id, '_mbpdf_download_mode', $mode);
         }
+    }
+
+    if (isset($_POST['mbpdf_button_style_field'])) {
+        $tpl = mbpdf_sanitize_style_slug(wp_unslash($_POST['mbpdf_button_style_field']));
+        update_post_meta($post_id, MBPDF_META_BUTTON_STYLE, $tpl);
+    }
+
+    if ( ! empty($_POST['mbpdf_set_default_style_for_new']) ) {
+        $tpl = isset($_POST['mbpdf_button_style_field'])
+            ? mbpdf_sanitize_style_slug(wp_unslash($_POST['mbpdf_button_style_field']))
+            : mbpdf_get_default_style_option();
+        update_option(MBPDF_OPTION_DEFAULT_STYLE, $tpl, false);
     }
 }
 add_action('save_post', 'mbpdf_guardar_metabox');
@@ -289,7 +515,7 @@ function mbpdf_resolve_download_mode($post_id, $download) {
  * Genera el HTML del botón PDF (shortcode, bloque y vista previa servidor).
  *
  * @param int   $post_id ID del CPT mbpdf_button.
- * @param array $args    class, text, target, download (inherit|auto|yes|no), size.
+ * @param array $args    class, text, target, download (inherit|auto|yes|no), size, style (inherit|slug).
  */
 function mbpdf_get_button_html($post_id, $args = array()) {
     $post_id = (int) $post_id;
@@ -313,8 +539,16 @@ function mbpdf_get_button_html($post_id, $args = array()) {
         'target'   => '_blank',
         'download' => 'inherit',
         'size'     => 48,
+        'style'    => 'inherit',
     );
     $args = wp_parse_args($args, $defaults);
+
+    $style_arg = (string) $args['style'];
+    if ($style_arg !== '' && $style_arg !== 'inherit') {
+        $tpl_slug = mbpdf_sanitize_style_slug($style_arg);
+    } else {
+        $tpl_slug = mbpdf_get_effective_button_style($post_id);
+    }
 
     $target = $args['target'] === '_self' ? '_self' : '_blank';
     $download_mode = mbpdf_resolve_download_mode($post_id, (string) $args['download']);
@@ -332,7 +566,7 @@ function mbpdf_get_button_html($post_id, $args = array()) {
         $pdf_title = __('Ver PDF', 'mi-boton-pdf');
     }
 
-    $container_class = 'pdf-icon-container';
+    $container_class = 'pdf-icon-container mbpdf-tpl-' . sanitize_html_class($tpl_slug);
     if ($args['class'] !== '') {
         $parts = preg_split('/\s+/', trim($args['class']), -1, PREG_SPLIT_NO_EMPTY);
         foreach ($parts as $part) {
@@ -395,6 +629,7 @@ function mbpdf_boton_shortcode($atts) {
             'target'   => '_blank',
             'download' => 'inherit',
             'size'     => '48',
+            'style'    => 'inherit',
         ),
         $atts,
         'mbpdf_boton'
@@ -413,6 +648,7 @@ function mbpdf_boton_shortcode($atts) {
             'target'   => $atts['target'],
             'download' => $atts['download'],
             'size'     => (int) $atts['size'],
+            'style'    => $atts['style'],
         )
     );
 }
@@ -437,6 +673,7 @@ function mbpdf_render_block_button($attributes) {
             'target'   => isset($attributes['target']) ? (string) $attributes['target'] : '_blank',
             'download' => isset($attributes['download']) ? (string) $attributes['download'] : 'inherit',
             'size'     => isset($attributes['size']) ? (int) $attributes['size'] : 48,
+            'style'    => isset($attributes['buttonStyle']) ? (string) $attributes['buttonStyle'] : 'inherit',
         )
     );
 }
@@ -464,7 +701,8 @@ function mbpdf_register_block() {
         'mbpdf-block-editor',
         'mbpdfBlock',
         array(
-            'buttons' => mbpdf_get_buttons_for_select(),
+            'buttons'        => mbpdf_get_buttons_for_select(),
+            'styleTemplates' => mbpdf_get_style_templates_for_block(),
         )
     );
 
@@ -501,6 +739,10 @@ function mbpdf_register_block() {
                 'className' => array(
                     'type'    => 'string',
                     'default' => '',
+                ),
+                'buttonStyle' => array(
+                    'type'    => 'string',
+                    'default' => 'inherit',
                 ),
             ),
             'editor_script'   => 'mbpdf-block-editor',
