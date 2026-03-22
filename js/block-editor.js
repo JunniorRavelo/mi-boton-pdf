@@ -35,7 +35,7 @@
             buttonId: { type: 'integer', default: 0 },
             text: { type: 'string', default: '' },
             target: { type: 'string', default: '_blank' },
-            download: { type: 'string', default: 'auto' },
+            download: { type: 'string', default: 'inherit' },
             size: { type: 'integer', default: 48 },
             className: { type: 'string', default: '' },
         },
@@ -89,12 +89,20 @@
                             },
                         } ),
                         el( SelectControl, {
-                            label: __( 'Atributo download', 'mi-boton-pdf' ),
-                            value: attributes.download || 'auto',
+                            label: __( 'PDF: visualizar o descargar', 'mi-boton-pdf' ),
+                            help: __(
+                                '«Usar configuración del botón» aplica lo definido al crear o editar el botón en Botones PDF.',
+                                'mi-boton-pdf'
+                            ),
+                            value: attributes.download || 'inherit',
                             options: [
+                                {
+                                    label: __( 'Usar configuración del botón', 'mi-boton-pdf' ),
+                                    value: 'inherit',
+                                },
                                 { label: __( 'Automático (mismo sitio)', 'mi-boton-pdf' ), value: 'auto' },
                                 { label: __( 'Forzar descarga', 'mi-boton-pdf' ), value: 'yes' },
-                                { label: __( 'No', 'mi-boton-pdf' ), value: 'no' },
+                                { label: __( 'En el navegador (sin forzar descarga)', 'mi-boton-pdf' ), value: 'no' },
                             ],
                             onChange: function ( v ) {
                                 setAttributes( { download: v } );

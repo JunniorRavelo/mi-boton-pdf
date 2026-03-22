@@ -3,7 +3,7 @@
  * Plugin Name: Button PDF
  * Plugin URI:  https://www.linkedin.com/in/jsravelo/
  * Description: Crea botones PDF con enlaces personalizados y genera shortcodes para insertarlos en entradas o páginas.
- * Version:     2.0.0
+ * Version:     2.1.0
  * Author:      J. Santiago Ravelo
  * Author URI:  https://www.linkedin.com/in/jsravelo/
  * Text Domain: mi-boton-pdf
@@ -14,7 +14,7 @@ if ( ! defined('ABSPATH') ) {
     exit;
 }
 
-define('MBPDF_VERSION', '2.0.0');
+define('MBPDF_VERSION', '2.1.0');
 
 /**
  * Cargar traducciones (carpeta /languages del plugin).
@@ -109,7 +109,8 @@ add_action('add_meta_boxes', 'mbpdf_agregar_metabox');
 function mbpdf_link_metabox_cb($post) {
     wp_nonce_field('mbpdf_link_metabox_nonce', 'mbpdf_link_metabox_nonce_field');
 
-    $pdf_link = get_post_meta($post->ID, '_mbpdf_link', true);
+    $pdf_link      = get_post_meta($post->ID, '_mbpdf_link', true);
+    $download_mode = mbpdf_get_stored_download_mode($post->ID);
     ?>
     <p>
         <label for="mbpdf_link_field">
@@ -129,6 +130,27 @@ function mbpdf_link_metabox_cb($post) {
     </p>
     <p>
         <button type="button" class="button" id="mbpdf_select_pdf"><?php esc_html_e('Biblioteca de medios…', 'mi-boton-pdf'); ?></button>
+    </p>
+    <p>
+        <label for="mbpdf_download_mode_field">
+            <strong><?php esc_html_e('Cómo abrir el PDF', 'mi-boton-pdf'); ?></strong>
+        </label>
+    </p>
+    <p>
+        <select id="mbpdf_download_mode_field" name="mbpdf_download_mode_field">
+            <option value="no" <?php selected($download_mode, 'no'); ?>>
+                <?php esc_html_e('En el navegador (visualizador)', 'mi-boton-pdf'); ?>
+            </option>
+            <option value="yes" <?php selected($download_mode, 'yes'); ?>>
+                <?php esc_html_e('Descargar el archivo', 'mi-boton-pdf'); ?>
+            </option>
+            <option value="auto" <?php selected($download_mode, 'auto'); ?>>
+                <?php esc_html_e('Automático: descargar solo si el PDF está en este sitio', 'mi-boton-pdf'); ?>
+            </option>
+        </select>
+    </p>
+    <p class="description">
+        <?php esc_html_e('En móviles y escritorio, sin “descargar” el enlace suele abrirse el visor del sistema o del navegador. Forzar descarga funciona mejor con PDFs alojados en este mismo sitio; en enlaces externos muchos navegadores pueden ignorarlo.', 'mi-boton-pdf'); ?>
     </p>
     <?php if ($post->ID && $post->post_status !== 'auto-draft') : ?>
         <p class="description">
@@ -167,6 +189,13 @@ function mbpdf_guardar_metabox($post_id) {
             $pdf_url = $raw;
         }
         update_post_meta($post_id, '_mbpdf_link', $pdf_url);
+    }
+
+    if (isset($_POST['mbpdf_download_mode_field'])) {
+        $mode = sanitize_text_field(wp_unslash($_POST['mbpdf_download_mode_field']));
+        if (in_array($mode, array('auto', 'yes', 'no'), true)) {
+            update_post_meta($post_id, '_mbpdf_download_mode', $mode);
+        }
     }
 }
 add_action('save_post', 'mbpdf_guardar_metabox');
@@ -225,10 +254,42 @@ function mbpdf_is_same_site_pdf_url($url) {
 }
 
 /**
+ * Modo de apertura/descarga guardado en el botón (metabox).
+ *
+ * @param int $post_id ID del CPT mbpdf_button.
+ * @return string 'auto'|'yes'|'no'
+ */
+function mbpdf_get_stored_download_mode($post_id) {
+    $post_id = (int) $post_id;
+    if ( ! $post_id ) {
+        return 'auto';
+    }
+    $saved = get_post_meta($post_id, '_mbpdf_download_mode', true);
+    return in_array($saved, array('auto', 'yes', 'no'), true) ? $saved : 'auto';
+}
+
+/**
+ * Convierte inherit (o vacío) en el modo efectivo del botón o valida el valor explícito.
+ *
+ * @param int    $post_id  ID del botón.
+ * @param string $download Valor del shortcode/bloque: inherit|auto|yes|no.
+ * @return string 'auto'|'yes'|'no'
+ */
+function mbpdf_resolve_download_mode($post_id, $download) {
+    if ($download === 'inherit' || $download === '') {
+        return mbpdf_get_stored_download_mode($post_id);
+    }
+    if (in_array($download, array('auto', 'yes', 'no'), true)) {
+        return $download;
+    }
+    return 'auto';
+}
+
+/**
  * Genera el HTML del botón PDF (shortcode, bloque y vista previa servidor).
  *
  * @param int   $post_id ID del CPT mbpdf_button.
- * @param array $args    class, text, target, download, size.
+ * @param array $args    class, text, target, download (inherit|auto|yes|no), size.
  */
 function mbpdf_get_button_html($post_id, $args = array()) {
     $post_id = (int) $post_id;
@@ -250,16 +311,13 @@ function mbpdf_get_button_html($post_id, $args = array()) {
         'class'    => '',
         'text'     => '',
         'target'   => '_blank',
-        'download' => 'auto',
+        'download' => 'inherit',
         'size'     => 48,
     );
     $args = wp_parse_args($args, $defaults);
 
     $target = $args['target'] === '_self' ? '_self' : '_blank';
-    $download_mode = $args['download'];
-    if ( ! in_array($download_mode, array('auto', 'yes', 'no'), true) ) {
-        $download_mode = 'auto';
-    }
+    $download_mode = mbpdf_resolve_download_mode($post_id, (string) $args['download']);
 
     $size = (int) $args['size'];
     if ($size < 16) {
@@ -335,7 +393,7 @@ function mbpdf_boton_shortcode($atts) {
             'class'    => '',
             'text'     => '',
             'target'   => '_blank',
-            'download' => 'auto',
+            'download' => 'inherit',
             'size'     => '48',
         ),
         $atts,
@@ -377,7 +435,7 @@ function mbpdf_render_block_button($attributes) {
             'class'    => isset($attributes['className']) ? (string) $attributes['className'] : '',
             'text'     => isset($attributes['text']) ? (string) $attributes['text'] : '',
             'target'   => isset($attributes['target']) ? (string) $attributes['target'] : '_blank',
-            'download' => isset($attributes['download']) ? (string) $attributes['download'] : 'auto',
+            'download' => isset($attributes['download']) ? (string) $attributes['download'] : 'inherit',
             'size'     => isset($attributes['size']) ? (int) $attributes['size'] : 48,
         )
     );
@@ -434,7 +492,7 @@ function mbpdf_register_block() {
                 ),
                 'download'  => array(
                     'type'    => 'string',
-                    'default' => 'auto',
+                    'default' => 'inherit',
                 ),
                 'size'      => array(
                     'type'    => 'integer',
